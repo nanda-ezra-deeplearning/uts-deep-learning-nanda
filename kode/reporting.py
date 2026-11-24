@@ -9,8 +9,8 @@ import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
 
 
-NAVY = "#17324d"
-TEAL = "#087e8b"
+NAVY = "#000000"
+TEAL = "#000000"
 PALE = "#eef3f8"
 INK = "#263445"
 LABELS = ["normal", "gores", "noda", "retak", "gelembung", "las_dingin", "kontaminasi"]
@@ -19,7 +19,7 @@ LABELS = ["normal", "gores", "noda", "retak", "gelembung", "las_dingin", "kontam
 def page(title: str, number: int):
     fig = plt.figure(figsize=(8.27, 11.69), facecolor="white")
     fig.text(.07, .955, title, fontsize=18, weight="bold", color=NAVY, va="top")
-    fig.text(.07, .027, f"Laporan UTS Deep Learning | Halaman {number} dari 8", fontsize=8, color="#64748b")
+    fig.text(.07, .027, f"Laporan UTS Deep Learning | Halaman {number} dari 9", fontsize=8, color="#64748b")
     return fig
 
 
@@ -130,12 +130,21 @@ def write_pdf(metrics: dict, path: Path, artifacts: Path):
                     for name, v in val.items()]
         table(fig.add_axes([.08, .61, .84, .20]), exp_rows,
               ["Eksperimen", "Macro-F1", "Akurasi", "F1 lini A", "F1 lini B"], font=7.3, scale=1.12)
-        ax = fig.add_axes([.11, .28, .78, .25])
+        ax_loss = fig.add_axes([.10, .30, .37, .22])
+        ax_f1 = fig.add_axes([.53, .30, .37, .22])
         for name, history in cls["learning_curves"].items():
-            ax.plot([q["epoch"] for q in history], [q["val_macro_f1"] for q in history], marker=".", linewidth=1,
-                    label=name.replace("_", " "))
-        ax.set(xlabel="Epoch", ylabel="Macro-F1 validasi", ylim=(0, 1))
-        ax.grid(alpha=.25); ax.legend(fontsize=6.4, ncol=3, loc="lower right")
+            epochs = [q["epoch"] for q in history]
+            label = name.replace("_", " ")
+            ax_loss.plot(epochs, [q["train_loss"] for q in history], marker=".", linewidth=1, label=label)
+            ax_f1.plot(epochs, [q["val_macro_f1"] for q in history], marker=".", linewidth=1, label=label)
+        ax_loss.set(xlabel="Epoch", ylabel="Loss train")
+        ax_f1.set(xlabel="Epoch", ylabel="Macro-F1 validasi", ylim=(0, 1))
+        for ax in (ax_loss, ax_f1):
+            ax.grid(alpha=.25)
+        ax_f1.legend(fontsize=5.8, ncol=2, loc="lower right")
+        paragraph(fig, "Kurva menunjukkan loss pada data latih dan Macro-F1 pada data validasi per epoch untuk enam eksperimen. "
+                  "Nilai ini berasal dari split validasi yang sama dan dipakai untuk membandingkan proses belajar; "
+                  "kurva bukan hasil evaluasi hidden test.", x=.09, y=.265, width=108, size=7.4)
         paragraph(fig, "Late fusion mengungguli model satu modalitas dan early fusion pada split validasi ini. "
                   "Sampling seimbang lini meningkatkan F1 lini B dari "
                   f"{_f(val['late_fusion']['line_accuracy']['B']['macro_f1'])} menjadi "
@@ -234,8 +243,29 @@ def write_pdf(metrics: dict, path: Path, artifacts: Path):
                   x=.08, y=.095, width=108, size=8)
         pdf.savefig(fig); plt.close(fig)
 
-        # 7 - Clustering.
-        fig = page("4. Task 3 - Clustering material multimodal", 7)
+        # 7 - RUL maintenance implications.
+        fig = page("3.2. Implikasi RUL untuk perencanaan servis", 7)
+        paragraph(fig, "Model RUL memberi perkiraan siklus tersisa, bukan diagnosis kerusakan atau jadwal servis yang sudah tervalidasi. "
+                  "Karena itu, hasil perlu dipakai sebagai pemicu pemeriksaan dan perencanaan, bersama inspeksi teknisi serta "
+                  "prosedur keselamatan yang berlaku.", y=.89, width=102, size=10)
+        u = rul["uncertainty"]
+        paragraph(fig, f"Pada validasi, interval prediksi ensemble dengan target cakupan 90% mencakup {100*u['validation_90pct_interval_coverage']:.1f}% target. "
+                  f"Lebar rata-ratanya {u['mean_interval_width']:.1f} siklus, sehingga ketidakpastian masih besar. "
+                  "Titik prediksi tunggal tidak cukup untuk menetapkan waktu servis.", y=.73, width=102, size=10)
+        fig.text(.10, .61, "Aturan operasional yang disarankan untuk diuji", fontsize=12, weight="bold", color=TEAL, va="top")
+        table(fig.add_axes([.10, .38, .80, .18]), [
+            ["1. Tetapkan lead time", "Tim pemeliharaan menentukan L: siklus untuk inspeksi, menyiapkan suku cadang, dan melakukan servis."],
+            ["2. Pantau batas bawah", "Gunakan batas bawah interval RUL 90% sebagai sinyal konservatif, bukan hanya nilai tengah prediksi."],
+            ["3. Jadwalkan pemeriksaan", "Jika batas bawah ≤ L, prioritaskan inspeksi dan rencanakan servis sesuai hasil pemeriksaan teknisi."],
+            ["4. Tinjau ulang", "Perbarui prediksi saat data baru masuk; uji aturan ini pada riwayat servis sebelum dipakai operasional."],
+        ], ["Langkah", "Penerapan"], font=8, scale=1.25)
+        paragraph(fig, "Nilai L tidak ditentukan dalam dataset UTS. Kelompok tidak menetapkan ambang siklus tertentu karena arsip tidak memuat "
+                  "lead time, biaya kegagalan, atau catatan keputusan servis. Aturan ini merupakan usulan interpretasi hasil model, "
+                  "bukan kebijakan pemeliharaan yang telah diuji.", x=.08, y=.27, width=103, size=9)
+        pdf.savefig(fig); plt.close(fig)
+
+        # 8 - Clustering.
+        fig = page("4. Task 3 - Clustering material multimodal", 8)
         paragraph(fig, "Autoencoder mempelajari embedding citra mikroskop dan spektrum secara terpisah. "
                   "Augmentasi yang digunakan adalah flip horizontal/vertikal untuk citra dan pergeseran kecil serta noise "
                   "untuk spektrum. Kedua embedding dinormalisasi dan digabungkan. K-means menjadi pembanding klasik dan "
@@ -256,8 +286,8 @@ def write_pdf(metrics: dict, path: Path, artifacts: Path):
                   "ID mikroskop bukan label material.", x=.08, y=.15, width=104, size=8.5)
         pdf.savefig(fig); plt.close(fig)
 
-        # 8 - Conclusions and reproducibility.
-        fig = page("5. Kesimpulan, batasan, dan reproduksibilitas", 8)
+        # 9 - Conclusions and reproducibility.
+        fig = page("5. Kesimpulan, batasan, dan reproduksibilitas", 9)
         paragraph(fig, "Pada klasifikasi, late fusion memberi macro-F1 validasi tertinggi di antara model fusion utama; "
                   "sensor hilang menurunkan kinerja dan pergeseran proporsi lini menuntut evaluasi per lini. "
                   "Pada RUL, GRU memberi RMSE terbaik, tetapi baseline klasik memberi skor asimetris lebih baik. "
@@ -269,8 +299,10 @@ def write_pdf(metrics: dict, path: Path, artifacts: Path):
         paragraph(fig, "Reproduksi penuh dilakukan dari root repository dengan perintah berikut:", x=.08, y=.64, width=100, size=9)
         fig.text(.10, .60, 'python -m kode.pipeline --data "D:\\Kuliah\\DL\\uts\\data_uts_dl.zip"',
                  fontsize=9, family="monospace", color=NAVY, va="top")
-        paragraph(fig, "Notebook VS Code `notebooks/uts_deep_learning.ipynb` menjalankan perintah yang sama. "
-                  "Pipeline menghasilkan laporan PDF, tiga CSV, metrik, grafik, dan bobot model. Versi pustaka dan seed "
+        paragraph(fig, "Notebook utama untuk menjalankan ulang proyek adalah notebooks/uts_deep_learning.ipynb di Google Colab. "
+                  "Unggah notebook, pilih GPU bila tersedia, unggah ZIP source ketika diminta, izinkan akses ke Google Drive "
+                  "yang berisi data_uts_dl.zip, lalu pilih Runtime > Run all. Hasil notebook disimpan di "
+                  "MyDrive/uts_dl_colab/hasil_uts_dl. Dataset tidak disertakan di repository. Versi pustaka dan seed "
                   f"dicatat di artifacts/metrics.json. Seed klasifikasi: {cls['final_seeds']}; seed RUL: {rul['final_seeds']}; "
                   "seed clustering: 7. Bobot model final disertakan di artifacts/models/.", x=.08, y=.54, width=104, size=9)
         versions = metrics["runtime"]
@@ -279,8 +311,8 @@ def write_pdf(metrics: dict, path: Path, artifacts: Path):
                         ["scikit-learn", versions["scikit_learn"]], ["Matplotlib", versions["matplotlib"]]]
         table(fig.add_axes([.15, .24, .70, .24]), version_rows, ["Pustaka", "Versi saat run"], font=8, scale=1.1)
         paragraph(fig, "Berkas submission: laporan.pdf, folder kode/, prediksi_klasifikasi.csv, prediksi_rul.csv, "
-                  "cluster.csv, dan kontribusi.md. Dataset ZIP tidak disalin ke repository. Nama dan peran anggota, "
-                  "tautan pull request, serta persetujuan AI perlu dilengkapi oleh kelompok sebelum pengumpulan.",
+                  "cluster.csv, dan kontribusi.md. Rincian peran anggota, tautan PR, dan persetujuan penggunaan AI "
+                  "dicatat pada kontribusi.md; pastikan semua bagian itu telah dikonfirmasi sebelum pengumpulan.",
                   x=.08, y=.16, width=104, size=8.5)
         pdf.savefig(fig); plt.close(fig)
 
