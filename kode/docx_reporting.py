@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-NAVY = "17324D"
-TEAL = "087E8B"
+NAVY = "000000"
+TEAL = "000000"
 PALE = "EEF3F8"
 INK = "263445"
 LABELS = ["normal", "gores", "noda", "retak", "gelembung", "las_dingin", "kontaminasi"]
@@ -221,6 +221,26 @@ def write_docx(metrics: dict, path: Path, artifacts: Path):
     ])
     _figure(doc, artifacts / "eda_class_examples.png", width=6.2, caption="Gambar 2. Contoh citra dan sinyal sensor untuk tiap kelas train.")
     _para(doc, f"Late fusion memperoleh macro-F1 {_f(val['late_fusion']['macro_f1'])}. Sampling seimbang lini memperoleh macro-F1 {_f(val['line_balanced']['macro_f1'])}; F1 lini B berubah dari {_f(val['late_fusion']['line_accuracy']['B']['macro_f1'])} menjadi {_f(val['line_balanced']['line_accuracy']['B']['macro_f1'])}. Label smoothing 0,1 menghasilkan macro-F1 {_f(val['label_smoothing']['macro_f1'])}, sehingga tidak meningkatkan nilai agregat pada split ini.")
+    doc.add_page_break()
+    fig, (ax_loss, ax_f1) = plt.subplots(1, 2, figsize=(10, 3.8))
+    for name, history in cls["learning_curves"].items():
+        epochs = [q["epoch"] for q in history]
+        label = name.replace("_", " ")
+        ax_loss.plot(epochs, [q["train_loss"] for q in history], marker=".", linewidth=1.4, label=label)
+        ax_f1.plot(epochs, [q["val_macro_f1"] for q in history], marker=".", linewidth=1.4, label=label)
+    ax_loss.set(title="Loss pelatihan", xlabel="Epoch", ylabel="Loss")
+    ax_f1.set(title="Macro-F1 validasi", xlabel="Epoch", ylabel="Macro-F1", ylim=(0, 1))
+    for ax in (ax_loss, ax_f1):
+        ax.grid(alpha=.25)
+        ax.set_xticks(range(1, 11))
+    ax_f1.legend(fontsize=7, ncol=2, loc="lower right")
+    fig.suptitle("Kurva pembelajaran klasifikasi", fontsize=13)
+    fig.tight_layout()
+    curve_path = artifacts / "classification_learning_curves.png"
+    fig.savefig(curve_path, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+    _figure(doc, curve_path, width=6.25, caption="Gambar 3. Loss train dan Macro-F1 validasi per epoch pada enam eksperimen klasifikasi.")
+    _para(doc, "Kurva berasal dari log eksperimen pada split validasi yang sama. Kurva digunakan untuk melihat perubahan selama pelatihan dan membandingkan eksperimen; hasilnya bukan skor hidden test.")
 
     doc.add_page_break()
     _heading(doc, "2.3 Analisis Kesalahan dan Prediksi", 2)
@@ -268,6 +288,9 @@ def write_docx(metrics: dict, path: Path, artifacts: Path):
                        f"{b.get('0-49',{}).get('asymmetric_score',0):.0f}", f"{b.get('50-99',{}).get('asymmetric_score',0):.0f}", f"{b.get('100-150',{}).get('asymmetric_score',0):.0f}"])
     _table(doc, ["Model", "RMSE 0-49", "50-99", "100-150", "Skor 0-49", "50-99", "100-150"], ranges)
     _para(doc, f"Interval ensemble bertarget cakupan 90% mencapai cakupan validasi {100*rul['uncertainty']['validation_90pct_interval_coverage']:.1f}% dan lebar rata-rata {rul['uncertainty']['mean_interval_width']:.1f} siklus. Lebar ini menunjukkan ketidakpastian prediksi masih cukup besar.")
+    _heading(doc, "Implikasi untuk perencanaan servis", 2)
+    _para(doc, "RUL merupakan perkiraan sisa siklus, bukan diagnosis kerusakan atau jadwal servis yang sudah tervalidasi. Gunakan batas bawah interval prediksi 90% sebagai sinyal konservatif untuk memicu pemeriksaan, bukan hanya nilai tengah prediksi. Tim pemeliharaan perlu menetapkan lead time L berdasarkan waktu inspeksi, persiapan suku cadang, dan pelaksanaan servis. Jika batas bawah interval RUL mencapai atau berada di bawah L, prioritaskan inspeksi dan rencanakan servis sesuai temuan teknisi.")
+    _para(doc, "Dataset UTS tidak memuat lead time, biaya kegagalan, maupun catatan keputusan servis, sehingga laporan ini tidak menetapkan ambang siklus tertentu. Aturan tersebut merupakan usulan interpretasi yang masih perlu diuji pada riwayat pemeliharaan nyata sebelum dipakai dalam operasi.")
 
     # Task 3.
     doc.add_page_break()
@@ -281,7 +304,7 @@ def write_docx(metrics: dict, path: Path, artifacts: Path):
         ["Gabungan K-means", _f(cl["kmeans_silhouette"])],
         ["Gabungan DEC", _f(cl["dec_silhouette"])],
     ])
-    _figure(doc, artifacts / "cluster_tsne.png", width=5.5, caption="Gambar 3. Visualisasi t-SNE embedding multimodal dengan label DEC.")
+    _figure(doc, artifacts / "cluster_tsne.png", width=5.5, caption="Gambar 4. Visualisasi t-SNE embedding multimodal dengan label DEC.")
     _para(doc, f"K={cl['selected_k']} dipilih karena memperoleh silhouette tertinggi dan Davies-Bouldin terendah pada rentang yang diuji. Silhouette embedding gabungan masih rendah ({_f(cl['dec_silhouette'])}), dan t-SNE memperlihatkan area sampel yang berdekatan antarkelompok. Ini menunjukkan batas cluster sulit dipisahkan dalam representasi saat ini. Tanpa label material asli, penyebab fisik overlap tidak dapat dipastikan. ARI tidak dapat dihitung; ID mikroskop bukan label material.")
 
     # Conclusions and reproducibility.
@@ -291,13 +314,13 @@ def write_docx(metrics: dict, path: Path, artifacts: Path):
     _heading(doc, "Batasan", 2)
     _para(doc, "Label klasifikasi test dan label referensi material tidak tersedia di arsip lokal. Karena itu laporan tidak mengklaim skor macro-F1 hidden test atau ARI. Nilai RUL merupakan hasil validasi pada mesin holdout dengan endpoint yang dipotong menyerupai panjang riwayat test.")
     _heading(doc, "Perintah Reproduksi", 2)
-    _para(doc, 'Dari root repository jalankan: python -m kode.pipeline --data "D:\\Kuliah\\DL\\uts\\data_uts_dl.zip". Pipeline melatih ulang ketiga task dan menghasilkan laporan, CSV, metrik, grafik, serta bobot model. Notebook VS Code menjalankan perintah yang sama.')
+    _para(doc, "Notebook utama untuk menjalankan ulang proyek adalah notebooks/uts_deep_learning.ipynb di Google Colab. Unggah notebook, pilih GPU bila tersedia, unggah ZIP source ketika diminta, izinkan akses ke Google Drive yang berisi data_uts_dl.zip, lalu pilih Runtime > Run all. Hasil notebook disimpan di MyDrive/uts_dl_colab/hasil_uts_dl. Dataset tidak disertakan di repository.")
     vers = metrics["runtime"]
     _table(doc, ["Pustaka", "Versi run"], [
         ["Python", vers["python"]], ["PyTorch", vers["torch"]], ["NumPy", vers["numpy"]],
         ["pandas", vers["pandas"]], ["scikit-learn", vers["scikit_learn"]], ["Matplotlib", vers["matplotlib"]],
     ])
-    _para(doc, f"Seed yang digunakan: klasifikasi {cls['final_seeds']}, RUL {rul['final_seeds']}, dan clustering 7. Bobot final disertakan pada artifacts/models/. Berkas pengumpulan utama adalah laporan.pdf, kode/, prediksi_klasifikasi.csv, prediksi_rul.csv, cluster.csv, dan kontribusi.md.")
+    _para(doc, f"Seed yang digunakan: klasifikasi {cls['final_seeds']}, RUL {rul['final_seeds']}, dan clustering 7. Bobot final disertakan pada artifacts/models/. Berkas pengumpulan utama adalah laporan.pdf, folder kode/, prediksi_klasifikasi.csv, prediksi_rul.csv, cluster.csv, dan kontribusi.md. Persetujuan penggunaan AI dan kontribusi tiap anggota dicatat pada kontribusi.md.")
 
     doc.core_properties.title = "Laporan Ujian Tengah Semester Deep Learning"
     doc.core_properties.subject = "Klasifikasi, regresi RUL, dan clustering multimodal"
